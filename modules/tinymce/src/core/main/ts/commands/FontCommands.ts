@@ -5,24 +5,11 @@
  * For commercial licenses see https://www.tiny.cloud/
  */
 
-import { Arr, Optional, Strings } from '@ephox/katamari';
+import { Arr, Strings } from '@ephox/katamari';
 import Editor from '../api/Editor';
 import * as Settings from '../api/Settings';
-import * as CaretFinder from '../caret/CaretFinder';
 import * as NodeType from '../dom/NodeType';
 import * as FontInfo from '../fmt/FontInfo';
-
-const findFirstCaretElement = (editor: Editor) => CaretFinder.firstPositionIn(editor.getBody()).map((caret) => {
-  const container = caret.container();
-  return NodeType.isText(container) ? container.parentNode : container;
-});
-
-const isRangeAtStartOfNode = (rng: Range, root: Node) => rng.startContainer === root && rng.startOffset === 0;
-
-const getCaretElement = (editor: Editor): Optional<Node> => Optional.from(editor.selection.getRng()).bind((rng) => {
-  const root = editor.getBody();
-  return isRangeAtStartOfNode(rng, root) ? Optional.none() : Optional.from(editor.selection.getStart(true));
-});
 
 const fromFontSizeNumber = (editor: Editor, value: string): string => {
   if (/^[0-9\.]+$/.test(value)) {
@@ -58,23 +45,30 @@ const normalizeFontNames = (font: string) => {
   }).join(',');
 };
 
+const fontQuery = (editor: Editor, fontProp: FontInfo.FontProp) => {
+  const getter = fontProp === 'font-family' ? FontInfo.getFontFamily : FontInfo.getFontSize;
+  let rngOrNode: Range | Node = editor.selection.getRng().cloneRange();
+  // Have to directly use node instead of rng as rng will not return any results otherwise
+  // Note: This occurs with a collapsed selection at the start or end of an element
+  if (NodeType.isText(rngOrNode.startContainer) && rngOrNode.startContainer === rngOrNode.endContainer) {
+    rngOrNode = rngOrNode.startContainer;
+  }
+  return getter(editor.getBody(), rngOrNode);
+};
+
 export const fontNameAction = (editor: Editor, value: string) => {
   const font = fromFontSizeNumber(editor, value);
   editor.formatter.toggle('fontname', { value: normalizeFontNames(font) });
   editor.nodeChanged();
 };
 
-export const fontNameQuery = (editor: Editor) => getCaretElement(editor).fold(
-  () => findFirstCaretElement(editor).map((caretElement) => FontInfo.getFontFamily(editor.getBody(), caretElement)).getOr(''),
-  (caretElement) => FontInfo.getFontFamily(editor.getBody(), caretElement)
-);
+export const fontNameQuery = (editor: Editor) =>
+  fontQuery(editor, 'font-family');
 
 export const fontSizeAction = (editor: Editor, value: string) => {
   editor.formatter.toggle('fontsize', { value: fromFontSizeNumber(editor, value) });
   editor.nodeChanged();
 };
 
-export const fontSizeQuery = (editor: Editor) => getCaretElement(editor).fold(
-  () => findFirstCaretElement(editor).map((caretElement) => FontInfo.getFontSize(editor.getBody(), caretElement)).getOr(''),
-  (caretElement) => FontInfo.getFontSize(editor.getBody(), caretElement)
-);
+export const fontSizeQuery = (editor: Editor) =>
+  fontQuery(editor, 'font-size');
