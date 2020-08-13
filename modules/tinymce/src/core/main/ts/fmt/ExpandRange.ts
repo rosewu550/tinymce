@@ -6,6 +6,7 @@
  */
 
 import { Optional } from '@ephox/katamari';
+import { SugarElement } from '@ephox/sugar';
 import DOMUtils from '../api/dom/DOMUtils';
 import TextSeeker from '../api/dom/TextSeeker';
 import Editor from '../api/Editor';
@@ -13,6 +14,7 @@ import * as Bookmarks from '../bookmark/Bookmarks';
 import * as NodeType from '../dom/NodeType';
 import * as RangeNodes from '../selection/RangeNodes';
 import { isContent, isNbsp, isWhiteSpace } from '../text/CharType';
+import { isEmpty } from '../dom/Empty';
 import * as FormatUtils from './FormatUtils';
 
 type Sibling = 'previousSibling' | 'nextSibling';
@@ -162,24 +164,16 @@ const findBlockEndPoint = (editor: Editor, format, container: Node, siblingName:
 };
 
 // This function walks up the tree if there is no siblings before/after the node
-const findParentContainer = (
-  dom: DOMUtils,
-  format,
-  startContainer: Node,
-  startOffset: number,
-  endContainer: Node,
-  endOffset: number,
-  start: boolean
-) => {
-  let container, parent, sibling;
+const findParentContainer = (dom: DOMUtils, format, container: Node, offset: number, start: boolean) => {
+  let parent = container;
+  let sibling: Element;
 
-  container = parent = start ? startContainer : endContainer;
   const siblingName = start ? 'previousSibling' : 'nextSibling';
   const root = dom.getRoot();
 
   // If it's a text node and the offset is inside the text
   if (NodeType.isText(container) && !isWhiteSpaceNode(container)) {
-    if (start ? startOffset > 0 : endOffset < container.nodeValue.length) {
+    if (start ? offset > 0 : offset < container.nodeValue.length) {
       return container;
     }
   }
@@ -190,10 +184,9 @@ const findParentContainer = (
     if (!format[0].block_expand && dom.isBlock(parent)) {
       return parent;
     }
-
     // Walk left/right
-    for (sibling = parent[siblingName]; sibling; sibling = sibling[siblingName]) {
-      if (!isBookmarkNode(sibling) && !isWhiteSpaceNode(sibling) && !isBogusBr(sibling)) {
+    for (sibling = parent[siblingName] as Element; sibling; sibling = sibling[siblingName] as Element) {
+      if (!isBookmarkNode(sibling) && !(isEmpty(SugarElement.fromDom(sibling)) && (!(sibling as any).data || (sibling as any).data !== ' ')) && !isBogusBr(sibling)) { // Terribly inelegant, and one of many attempts to make this work. Would not be like this for a PR.
         return parent;
       }
     }
@@ -298,11 +291,11 @@ const expandRng = (
   // Move start point up the tree
   if (format[0].inline || format[0].block_expand) {
     if (!format[0].inline || (!NodeType.isText(startContainer) || startOffset === 0)) {
-      startContainer = findParentContainer(dom, format, startContainer, startOffset, endContainer, endOffset, true);
+      startContainer = findParentContainer(dom, format, startContainer, startOffset, true);
     }
 
     if (!format[0].inline || (!NodeType.isText(endContainer) || endOffset === endContainer.nodeValue.length)) {
-      endContainer = findParentContainer(dom, format, startContainer, startOffset, endContainer, endOffset, false);
+      endContainer = findParentContainer(dom, format, endContainer, endOffset, false);
     }
   }
 
@@ -322,11 +315,11 @@ const expandRng = (
     // Non block element then try to expand up the leaf
     if (format[0].block) {
       if (!dom.isBlock(startContainer)) {
-        startContainer = findParentContainer(dom, format, startContainer, startOffset, endContainer, endOffset, true);
+        startContainer = findParentContainer(dom, format, startContainer, startOffset, true);
       }
 
       if (!dom.isBlock(endContainer)) {
-        endContainer = findParentContainer(dom, format, startContainer, startOffset, endContainer, endOffset, false);
+        endContainer = findParentContainer(dom, format, endContainer, endOffset, false);
       }
     }
   }
